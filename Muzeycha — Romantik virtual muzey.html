@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Muzeycha — Virtual muzey</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #1a1220;
+    font-family: Georgia, 'Times New Roman', serif; color: #f3e6d0;
+  }
+  canvas { display: block; touch-action: none; }
+  .small { font-size: 12px; color: #a99a88; }
+
+  #toggle {
+    position: fixed; top: 12px; left: 12px; z-index: 3;
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(201,162,74,.6);
+    background: rgba(32,20,36,.85); color: #e7c27a; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #panel {
+    position: fixed; top: 60px; left: 12px; width: 250px; max-height: calc(100% - 80px); overflow: auto; z-index: 3;
+    background: rgba(32, 20, 36, .88); border: 1px solid rgba(201, 162, 74, .55);
+    padding: 14px 16px; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.45);
+    font-size: 14px; line-height: 1.45; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  #panel.hidden { display: none; }
+  #panel h1 { font-size: 20px; margin: 0 0 4px; font-weight: normal; letter-spacing: .08em; color: #e7c27a; }
+  #panel p { margin: 6px 0; color: #d8c7b2; }
+  #count { color: #e7c27a; }
+  #status { color: #e7c27a; font-style: italic; min-height: 1em; }
+
+  .btn {
+    display: inline-block; font: inherit; font-size: 14px;
+    background: linear-gradient(135deg, #c9a24a, #e7c27a); color: #2a1a10;
+    border: 0; padding: 9px 16px; border-radius: 999px; cursor: pointer; margin: 6px 6px 0 0;
+  }
+  .btn.light { background: transparent; color: #e7c27a; border: 1px solid rgba(231,194,122,.6); }
+  .btn.danger { background: #7a2e3f; color: #fbe9ee; }
+  input[type=file] { display: none; }
+
+  #pad {
+    position: fixed; bottom: 18px; left: 18px; z-index: 3;
+    display: grid; grid-template-columns: 52px 52px 52px; grid-template-rows: 52px 52px;
+    gap: 6px; user-select: none;
+  }
+  #pad button {
+    background: rgba(32,20,36,.8); color: #e7c27a;
+    border: 1px solid rgba(201,162,74,.5); border-radius: 14px; font-size: 20px; touch-action: none;
+  }
+  #pad .up    { grid-column: 2; grid-row: 1; }
+  #pad .left  { grid-column: 1; grid-row: 2; }
+  #pad .down  { grid-column: 2; grid-row: 2; }
+  #pad .right { grid-column: 3; grid-row: 2; }
+
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-style: italic; font-size: 18px; color: #e7c27a; pointer-events: none;
+    transition: opacity .8s; background: #1a1220; z-index: 5;
+  }
+
+  #intro {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(12, 6, 14, .72); z-index: 4; padding: 20px; box-sizing: border-box;
+  }
+  #intro.open { display: flex; }
+  #intro .card {
+    max-width: 420px; background: rgba(32,20,36,.95); border: 1px solid rgba(201,162,74,.6);
+    border-radius: 18px; padding: 26px 26px 22px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  }
+  #intro h2 { margin: 0 0 10px; font-weight: normal; font-size: 22px; color: #e7c27a; letter-spacing: .05em; }
+  #intro p { margin: 8px 0; color: #d8c7b2; line-height: 1.5; }
+
+  #modal {
+    position: fixed; inset: 0; background: rgba(12, 6, 14, .9); z-index: 6;
+    display: none; align-items: center; justify-content: center; flex-direction: column; padding: 20px; box-sizing: border-box;
+  }
+  #modal.open { display: flex; }
+  #modal img, #modal video {
+    max-width: 92vw; max-height: 74vh; border-radius: 4px; box-shadow: 0 8px 40px rgba(201,162,74,.25);
+  }
+  #modal .cap { color: #e7c27a; margin: 12px 0; font-size: 15px; text-align: center; word-break: break-all; }
+  #modal .row { display: flex; gap: 10px; }
+
+  @media (max-width: 600px) { #panel { width: auto; right: 12px; } }
+</style>
+</head>
+<body>
+
+<button id="toggle" title="Boshqaruv">☰</button>
+
+<div id="panel" class="hidden">
+  <h1>Muzeycha</h1>
+  <p class="small" id="roleText"></p>
+  <p><span id="count">Rasmlar: 0 / 36</span></p>
+
+  <div id="editorBox" style="display:none">
+    <label class="btn" for="file">Rasm / video yuklash</label>
+    <input id="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm" multiple>
+    <br>
+    <label class="btn light" for="music">Musiqa yuklash</label>
+    <input id="music" type="file" accept="audio/mp4,audio/x-m4a,video/mp4,video/webm,.m4a,.mp4,.webm">
+    <p class="small">Musiqa: MP4, M4A yoki WEBM. MP3 hozircha qo'llab-quvvatlanmaydi.</p>
+  </div>
+
+  <div id="musicBox" style="display:none">
+    <button class="btn light" id="musicBtn">♪ Musiqani yoqish</button>
+  </div>
+
+  <p id="status"></p>
+  <p class="small">Yurish: W (oldinga), S (orqaga), A (chapga), D (o'ngga). Kamerani sichqoncha yoki barmoq bilan suring. Yaqinlashish: g'ildirak yoki qisish.</p>
+</div>
+
+<div id="pad">
+  <button class="up" data-k="w">▲</button>
+  <button class="left" data-k="a">◀</button>
+  <button class="down" data-k="s">▼</button>
+  <button class="right" data-k="d">▶</button>
+</div>
+
+<div id="intro">
+  <div class="card" id="introEditor" style="display:none">
+    <h2>Muzeyga xush kelibsiz</h2>
+    <p>Muzeyni boshlash uchun rasm va videolarni tanlang. Ular devorlarga joylashtiriladi va havola orqali boshqalar ham ko'radi.</p>
+    <label class="btn" for="fileIntro">Rasm va videolarni tanlash</label>
+    <input id="fileIntro" type="file" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm" multiple>
+  </div>
+  <div class="card" id="introViewer" style="display:none">
+    <h2>Muzey hali bo'sh</h2>
+    <p>Muzey egasi hali rasm yuklamagan. Keyinroq qayta kiring.</p>
+  </div>
+</div>
+
+<div id="loading">Muzey tayyorlanmoqda…</div>
+
+<div id="modal">
+  <img id="mimg" alt="" style="display:none">
+  <video id="mvid" controls playsinline style="display:none"></video>
+  <div class="cap" id="mcap"></div>
+  <div class="row">
+    <button class="btn light" id="mclose">Yopish</button>
+    <button class="btn danger" id="mdel" style="display:none">O‘chirish</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+// ======================= Sozlamalar =======================
+const W = 34;
+const WH = 13;
+const WALL_T = 0.6;
+const COL_X = [-20, -12, -4, 4, 12, 20];
+const ROW_Y = [3.8, 8.2];
+const MAX_FRAMES = COL_X.length * ROW_Y.length * 3;   // 36: orqa + chap + o'ng devor
+
+// ======================= Sahna =======================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1220);
+scene.fog = new THREE.Fog(0x2a1a2c, 70, 150);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 400);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.insertBefore(renderer.domElement, document.getElementById('pad'));
+
+// ======================= Yordamchilar =======================
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+
+function canvasTex(w, h, draw, rx = 1, ry = 1) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+function addPart(geo, mat, x, y, z, parent = scene, cast = true) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.castShadow = cast;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+function addBox(w, h, d, x, y, z, mat, cast = true) {
+  return addPart(new THREE.BoxGeometry(w, h, d), mat, x, y, z, scene, cast);
+}
+function disposeGroup(g) {
+  g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+}
+
+// ======================= Materiallar =======================
+const wallpaperTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#4a2538'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(231,194,122,0.45)'; g.lineWidth = 2;
+  g.fillStyle = 'rgba(231,194,122,0.45)';
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) {
+    const cx = col * w / 2 + w / 4, cy = row * h / 2 + h / 4;
+    g.beginPath(); g.ellipse(cx, cy, 28, 44, 0, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI * 2); g.fill();
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+      g.beginPath(); g.arc(cx + Math.cos(a) * 48, cy + Math.sin(a) * 48, 6, 0, Math.PI * 2); g.fill();
+    }
+  }
+}, (2 * W) / 6, WH / 6);
+
+const floorTex = canvasTex(512, 512, (g, w, h) => {
+  const plankH = 64;
+  const tones = ['#7a4e35', '#6e4330', '#84583b'];
+  for (let y = 0, r = 0; y < h; y += plankH, r++) {
+    g.fillStyle = tones[r % 3];
+    g.fillRect(0, y, w, plankH);
+    g.fillStyle = 'rgba(0,0,0,.28)';
+    g.fillRect(0, y, w, 2);
+    for (let x = -((r * 97) % 256); x < w; x += 256) g.fillRect(x, y, 2, plankH);
+  }
+}, 4, 4);
+
+const rugTex = canvasTex(512, 384, (g, w, h) => {
+  g.fillStyle = '#5c1f2e'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = '#c9a24a'; g.lineWidth = 14; g.strokeRect(24, 24, w - 48, h - 48);
+  g.lineWidth = 4; g.strokeRect(54, 54, w - 108, h - 108);
+  g.fillStyle = 'rgba(201,162,74,.4)';
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 5; j++) {
+    g.beginPath(); g.arc(90 + i * 65, 80 + j * 60, 10, 0, Math.PI * 2); g.fill();
+  }
+});
+
+const petalTex = canvasTex(64, 64, g => {
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(255,205,225,1)');
+  gr.addColorStop(1, 'rgba(255,205,225,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+});
+
+const mats = {
+  plaster:    new THREE.MeshStandardMaterial({ color: 0x3d2a43, roughness: 0.95 }),
+  wallpaper:  new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9 }),
+  ceiling:    new THREE.MeshStandardMaterial({ color: 0x241a2b, roughness: 1 }),
+  floor:      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.6 }),
+  rug:        new THREE.MeshStandardMaterial({ map: rugTex, roughness: 1 }),
+  gold:       new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.8, roughness: 0.3 }),
+  marble:     new THREE.MeshStandardMaterial({ color: 0xeee3d6, roughness: 0.5 }),
+  velvet:     new THREE.MeshStandardMaterial({ color: 0x6a1b2c, roughness: 1 }),
+  plant:      new THREE.MeshStandardMaterial({ color: 0x2f5a3b, roughness: 0.9 }),
+  pot:        new THREE.MeshStandardMaterial({ color: 0x5c3a2a, roughness: 0.8 }),
+  glow:       new THREE.MeshStandardMaterial({ color: 0xffb3c7, emissive: 0xff7fa0, emissiveIntensity: 0.9, roughness: 0.4 }),
+  frameBlack: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 }),
+  frameGold:  new THREE.MeshStandardMaterial({ color: 0xd4ae5a, metalness: 0.7, roughness: 0.35 }),
+  mat:        new THREE.MeshStandardMaterial({ color: 0xf3e6d0, roughness: 0.9 }),
+};
+
+// ======================= Yorug'lik =======================
+scene.add(new THREE.HemisphereLight(0xc8a0c8, 0x2a1a2c, 0.6));
+const sun = new THREE.DirectionalLight(0xffd9b8, 0.35);
+sun.position.set(10, 40, 12);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, far: 150 });
+scene.add(sun);
+
+const chandelierLight = new THREE.PointLight(0xffc89a, 1.6, 90, 1.2);
+chandelierLight.position.set(0, WH - 3, 0);
+scene.add(chandelierLight);
+for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+  const l = new THREE.PointLight(0xff9ab5, 0.7, 45, 1.5);
+  l.position.set(sx * (W - 6), 7, sz * (W - 6));
+  scene.add(l);
+}
+
+// ======================= Pol, shift, devorlar =======================
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(2 * W, 2 * W), mats.floor);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(2 * W, 2 * W), mats.ceiling);
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.y = WH;
+scene.add(ceiling);
+
+// Devorlar: orqa (oboy), chap, o'ng, old (kirish oralig'i bilan)
+addBox(2 * W, WH, WALL_T, 0, WH / 2, -W, mats.wallpaper);
+addBox(WALL_T, WH, 2 * W, -W, WH / 2, 0, mats.plaster);
+addBox(WALL_T, WH, 2 * W, W, WH / 2, 0, mats.plaster);
+addBox(W - 4, WH, WALL_T, -(W + 4) / 2, WH / 2, W, mats.plaster);
+addBox(W - 4, WH, WALL_T, (W + 4) / 2, WH / 2, W, mats.plaster);
+
+// Oltin bo'ylama
+addBox(2 * W - 0.6, 0.5, 0.25, 0, 0.25, -W + 0.35, mats.gold, false);
+addBox(0.25, 0.5, 2 * W - 0.6, -W + 0.35, 0.25, 0, mats.gold, false);
+addBox(0.25, 0.5, 2 * W - 0.6, W - 0.35, 0.25, 0, mats.gold, false);
+addBox(2 * W - 0.6, 0.5, 0.25, 0, WH - 0.25, -W + 0.35, mats.gold, false);
+addBox(0.25, 0.5, 2 * W - 0.6, -W + 0.35, WH - 0.25, 0, mats.gold, false);
+addBox(0.25, 0.5, 2 * W - 0.6, W - 0.35, WH - 0.25, 0, mats.gold, false);
+
+// Baxmal pardalar (orqa devor, chetda)
+for (const x of [-27, 27]) {
+  addBox(4.2, WH - 1.5, 0.4, x, (WH - 1.5) / 2 + 0.5, -W + 0.9, mats.velvet);
+  addBox(4.6, 0.4, 0.6, x, WH - 1.2, -W + 1.0, mats.gold, false);
+}
+
+// Markaziy lyustra
+const chandelier = new THREE.Group();
+chandelier.position.set(0, WH - 3, 0);
+scene.add(chandelier);
+addPart(new THREE.TorusGeometry(2.8, 0.12, 12, 48), mats.gold, 0, 0, 0, chandelier, false).rotation.x = Math.PI / 2;
+addPart(new THREE.CylinderGeometry(0.05, 0.05, 3, 6), mats.gold, 0, 1.5, 0, chandelier, false);
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2;
+  addPart(new THREE.SphereGeometry(0.22, 10, 8), mats.glow, Math.cos(a) * 2.8, -0.2, Math.sin(a) * 2.8, chandelier, false);
+}
+
+// ======================= Dekor va to'siqlar =======================
+const obstacles = [];
+
+// Burchak o'simliklari (devorlar emas, faqat dekor)
+for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+  const px = sx * 12, pz = sz * 12;
+  addPart(new THREE.CylinderGeometry(0.9, 0.7, 1.6, 20), mats.pot, px, 0.8, pz);
+  addPart(new THREE.SphereGeometry(1.8, 16, 12), mats.plant, px, 3.0, pz);
+  addPart(new THREE.SphereGeometry(1.2, 12, 10), mats.plant, px + 0.9, 4.2, pz - 0.4);
+  obstacles.push({ x: px, z: pz, r: 1.0 });
+}
+
+// Markazdagi gul-marmar ustun
+addPart(new THREE.CylinderGeometry(2.4, 2.6, 1.2, 40), mats.marble, 0, 0.6, 0);
+addPart(new THREE.TorusGeometry(2.5, 0.12, 10, 40), mats.gold, 0, 1.25, 0, scene, false).rotation.x = Math.PI / 2;
+addPart(new THREE.SphereGeometry(0.9, 20, 16), mats.glow, 0, 2.4, 0);
+obstacles.push({ x: 0, z: 0, r: 2.4 });
+
+// Baxmal skameyka
+addBox(7, 0.8, 1.8, 0, 0.9, 9, mats.velvet);
+addBox(7, 1.3, 0.4, 0, 1.7, 9.8, mats.velvet);
+addBox(7.2, 0.25, 2.0, 0, 1.35, 9, mats.gold, false);
+obstacles.push({ minX: -3.6, maxX: 3.6, minZ: 8.1, maxZ: 9.9 });
+
+// Gilam
+const rug = new THREE.Mesh(new THREE.PlaneGeometry(16, 11), mats.rug);
+rug.rotation.x = -Math.PI / 2;
+rug.position.set(0, 0.03, 2);
+rug.receiveShadow = true;
+scene.add(rug);
+
+// ======================= Rasm joylari: orqa, chap va o'ng devor =======================
+// Har bir qatorda 6 ta joy, ikki qator, uch devor: 36 ta. Chiroq o'rni shu joylar bilan almashtirildi.
+const SLOTS = [];
+for (const y of ROW_Y) {
+  for (const x of COL_X) SLOTS.push({ x, y, z: -W + 0.36, ry: 0 });            // orqa devor
+  for (const z of COL_X) SLOTS.push({ x: -W + 0.36, y, z, ry: Math.PI / 2 });   // chap devor
+  for (const z of COL_X) SLOTS.push({ x: W - 0.36, y, z, ry: -Math.PI / 2 });   // o'ng devor
+}
+function slotPose(k) { return SLOTS[k]; }
+
+// ======================= Uchuvchi gullar =======================
+const PN = 280;
+const petalPos = new Float32Array(PN * 3);
+for (let i = 0; i < PN; i++) {
+  petalPos[i * 3] = rand(-W + 2, W - 2);
+  petalPos[i * 3 + 1] = rand(0, WH);
+  petalPos[i * 3 + 2] = rand(-W + 2, W - 2);
+}
+const petalGeo = new THREE.BufferGeometry();
+petalGeo.setAttribute('position', new THREE.BufferAttribute(petalPos, 3));
+scene.add(new THREE.Points(petalGeo, new THREE.PointsMaterial({
+  size: 0.45, map: petalTex, color: 0xffc2d6, transparent: true, opacity: 0.85, depthWrite: false
+})));
+
+// ======================= Belgi: mushuk (kodda yasalgan) =======================
+// Rasmlardagi mushukka o'xshash: oq tana, to'q sariq dog'lar, katta qora ko'zlar,
+// pushti burun, qora mo'ylov va tukchalar, quloqlar, dum.
+const player = new THREE.Group();
+player.position.set(0, 0, W - 4);
+scene.add(player);
+
+let heading = Math.PI;       // yo'nalish (radian); fwd = (sin, cos)
+let walkPhase = 0;
+let catParts = null;
+let catBaseY = 0;
+
+function buildCat() {
+  const cat = new THREE.Group();
+  const cream = new THREE.MeshStandardMaterial({ color: 0xfbf6ee, roughness: 0.55 });
+  const tan   = new THREE.MeshStandardMaterial({ color: 0xe0a06a, roughness: 0.55 });
+  const pink  = new THREE.MeshStandardMaterial({ color: 0xf2a3ad, roughness: 0.5 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.15, metalness: 0.1 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+  const blush = new THREE.MeshBasicMaterial({ color: 0xff8f9f, transparent: true, opacity: 0.5 });
+
+  const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, parent = cat) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  };
+  const sph = (r) => new THREE.SphereGeometry(r, 28, 20);
+
+  // Tana
+  add(sph(0.9), cream, 0, 1.15, 0, 1, 1.15, 0.9);
+  add(sph(0.22), tan, 0.78, 1.3, 0.25, 0.5, 1.2, 0.35);
+  add(sph(0.22), tan, -0.78, 1.1, 0.2, 0.5, 1.2, 0.35);
+
+  // Bosh
+  add(sph(1), cream, 0, 2.35, 0, 1.05, 0.92, 0.95);
+  add(sph(0.3), tan, 0, 2.98, 0.55, 0.5, 0.35, 0.35);
+  add(sph(0.22), tan, -0.35, 3.0, 0.45, 0.4, 0.3, 0.3);
+  add(sph(0.22), tan, 0.35, 3.0, 0.45, 0.4, 0.3, 0.3);
+  add(sph(0.3), tan, -0.92, 2.25, 0.25, 0.35, 0.5, 0.35);
+  add(sph(0.3), tan, 0.92, 2.25, 0.25, 0.35, 0.5, 0.35);
+
+  // Quloqlar (tashqi va ichki pushti)
+  const earGeo = new THREE.ConeGeometry(0.42, 0.85, 24);
+  const earIn = new THREE.ConeGeometry(0.25, 0.5, 20);
+  const earL = add(earGeo, tan, -0.62, 3.15, 0, 1, 1, 0.6);  earL.rotation.z = 0.28;
+  const earR = add(earGeo, tan, 0.62, 3.15, 0, 1, 1, 0.6);   earR.rotation.z = -0.28;
+  add(earIn, pink, -0.62, 3.1, 0.18, 1, 1, 0.5).rotation.z = 0.28;
+  add(earIn, pink, 0.62, 3.1, 0.18, 1, 1, 0.5).rotation.z = -0.28;
+
+  // Ko'zlar va yorug'lik nuqtalari
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Group();
+    eye.position.set(sx * 0.36, 2.42, 0.86);
+    cat.add(eye);
+    const e = new THREE.Mesh(sph(0.2), black);
+    e.scale.set(1, 1.2, 0.6);
+    eye.add(e);
+    const h = new THREE.Mesh(sph(0.06), white);
+    h.position.set(0.06, 0.07, 0.12);
+    eye.add(h);
+  }
+
+  // Burun va og'iz
+  add(sph(0.09), pink, 0, 2.2, 0.93, 1.3, 0.8, 0.5);
+  for (const sx of [-1, 1]) {
+    const t = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 16, Math.PI), black);
+    t.position.set(sx * 0.1, 2.1, 0.92);
+    t.rotation.z = Math.PI;
+    cat.add(t);
+  }
+
+  // Yonoq qizarishi
+  for (const sx of [-1, 1]) {
+    const c = new THREE.Mesh(new THREE.CircleGeometry(0.15, 16), blush);
+    c.position.set(sx * 0.6, 2.05, 0.86);
+    cat.add(c);
+  }
+
+  // Mo'ylovlar (har tomonda 3 ta)
+  for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.9, 6), black);
+    w.position.set(sx * 1.2, 2.2 + (i - 1) * 0.12, 0.5);
+    w.rotation.z = Math.PI / 2;
+    w.rotation.y = sx * 0.15 * (i - 1);
+    cat.add(w);
+  }
+
+  // Tana va ko'krak dog'lari
+  // (yuqorida qo'shilgan)
+
+  // Qo'llar
+  const arms = {};
+  for (const sx of [-1, 1]) {
+    const arm = new THREE.Group();
+    arm.position.set(sx * 0.92, 1.55, 0.2);
+    cat.add(arm);
+    add(sph(0.28), cream, 0, -0.2, 0.1, 0.9, 1.2, 0.9, arm);
+    add(sph(0.26), cream, 0, -0.5, 0.25, 1, 0.7, 1.1, arm);
+    add(sph(0.14), tan, 0, 0.05, 0, 1, 1, 1, arm);
+    arms[sx] = arm;
+  }
+
+  // Oyoqlar
+  const legs = {};
+  for (const sx of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(sx * 0.4, 0.62, 0.1);
+    cat.add(hip);
+    add(sph(0.32), cream, 0, -0.22, 0, 1, 1.1, 1, hip);
+    add(sph(0.3), cream, 0, -0.55, 0.1, 1.1, 0.6, 1.3, hip);
+    legs[sx] = hip;
+  }
+
+  // Dum (silliq egri tubensimon)
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.5, -0.7);
+  cat.add(tail);
+  const pts = [
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0.1, 0.2, -0.5),
+    new THREE.Vector3(0.4, 0.9, -0.8),
+    new THREE.Vector3(0.5, 1.5, -0.5),
+  ];
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const tailMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 30, 0.14, 12, false), tan);
+  tailMesh.castShadow = true;
+  tail.add(tailMesh);
+  const tip = new THREE.Mesh(sph(0.15), cream);
+  tip.position.copy(pts[3]);
+  tail.add(tip);
+
+  // O'lchamlash: balandligi 2.9 birlik, tagi yer sathida, markazi (0,0)
+  cat.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(cat);
+  const size = bb.getSize(new THREE.Vector3());
+  const center = bb.getCenter(new THREE.Vector3());
+  const s = 2.9 / size.y;
+  cat.scale.setScalar(s);
+  cat.position.set(-center.x * s, -bb.min.y * s, -center.z * s);
+  catBaseY = cat.position.y;
+
+  return { cat, legs, arms, tail };
+}
+
+{
+  const built = buildCat();
+  player.add(built.cat);
+  catParts = built;
+}
+
+// ======================= Boshqaruv =======================
+const keys = new Set();
+let pitch = 0.4;
+let dist = 9;
+let dragging = false, dragMoved = 0, lastX = 0, lastY = 0;
+
+const KEYMAP = {
+  w: 'w', arrowup: 'w', s: 's', arrowdown: 's',
+  a: 'a', arrowleft: 'a', d: 'd', arrowright: 'd',
+};
+window.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  const k = KEYMAP[e.key.toLowerCase()];
+  if (k) { keys.add(k); e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+  const k = KEYMAP[e.key.toLowerCase()];
+  if (k) keys.delete(k);
+});
+
+document.querySelectorAll('#pad button').forEach(btn => {
+  const k = btn.dataset.k;
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); keys.add(k); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev =>
+    btn.addEventListener(ev, () => keys.delete(k))
+  );
+});
+
+const canvas = renderer.domElement;
+canvas.addEventListener('pointerdown', e => {
+  dragging = true; dragMoved = 0; lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener('pointerup', () => dragging = false);
+window.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  dragMoved += Math.abs(dx) + Math.abs(dy);
+  heading -= dx * 0.006;      // o'ngga surish — o'ngga burilish
+  pitch = clamp(pitch + dy * 0.004, 0.1, 1.15);
+  lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  dist = clamp(dist + e.deltaY * 0.01, 4, 22);
+}, { passive: false });
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// Boshqaruv panelini ochish/yopish
+const panel = document.getElementById('panel');
+document.getElementById('toggle').addEventListener('click', () => panel.classList.toggle('hidden'));
+
+// ======================= Ulanish (db + assets + user) =======================
+let db = null;
+let assets = null;
+const items = new Map();   // docId -> entry
+const statusEl = document.getElementById('status');
+const countEl = document.getElementById('count');
+const roleEl = document.getElementById('roleText');
+const editorBox = document.getElementById('editorBox');
+const musicBox = document.getElementById('musicBox');
+const musicBtn = document.getElementById('musicBtn');
+const introEl = document.getElementById('intro');
+const introEditor = document.getElementById('introEditor');
+const introViewer = document.getElementById('introViewer');
+const audio = new Audio();
+audio.loop = true;
+audio.volume = 0.5;
+
+function setStatus(t) { statusEl.textContent = t || ''; }
+function updateCount() { countEl.textContent = `Rasmlar: ${items.size} / ${MAX_FRAMES}`; }
+
+function nextFreeSlot() {
+  const used = new Set([...items.values()].map(e => e.slot));
+  for (let i = 0; i < MAX_FRAMES; i++) if (!used.has(i)) return i;
+  return -1;
+}
+
+// ---------- Kadr yasash ----------
+function placeGroup(entry) {
+  if (!entry.group) return;
+  const p = slotPose(entry.slot);
+  entry.group.position.set(p.x, p.y, p.z);
+  entry.group.rotation.y = p.ry;
+}
+
+function buildFrame(entry, tex, aspect) {
+  if (entry.group) { scene.remove(entry.group); disposeGroup(entry.group); }
+  let h = 3.0, w = h * aspect;
+  if (w > 4.2) { w = 4.2; h = w / aspect; }
+  if (h > 3.6) { h = 3.6; w = h * aspect; }
+
+  const g = new THREE.Group();
+  if (entry.slot % 2 === 0) {
+    addPart(new THREE.BoxGeometry(w + 1.0, h + 1.0, 0.22), mats.frameGold, 0, 0, 0, g);
+    addPart(new THREE.BoxGeometry(w + 0.4, h + 0.4, 0.16), mats.mat, 0, 0, 0.04, g);
+  } else {
+    addPart(new THREE.BoxGeometry(w + 0.3, h + 0.3, 0.14), mats.frameBlack, 0, 0, 0, g);
+  }
+  const pic = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 })
+  );
+  pic.position.z = 0.13;
+  g.add(pic);
+  entry.group = g;
+  scene.add(g);
+  placeGroup(entry);
+}
+
+function loadEntry(entry) {
+  const url = '/_blob/' + entry.assetId;
+  if (entry.kind === 'video') {
+    const v = document.createElement('video');
+    v.src = url;
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    entry.video = v;
+    v.addEventListener('loadeddata', () => {
+      const tex = new THREE.VideoTexture(v);
+      tex.encoding = THREE.sRGBEncoding;
+      buildFrame(entry, tex, (v.videoWidth / v.videoHeight) || 1.777);
+    });
+    v.addEventListener('error', () => console.error('video yuklanmadi', entry.id));
+    v.load();
+  } else {
+    new THREE.TextureLoader().load(url, tex => {
+      tex.encoding = THREE.sRGBEncoding;
+      buildFrame(entry, tex, tex.image.width / tex.image.height);
+    }, undefined, () => console.error('rasm yuklanmadi', entry.id));
+  }
+}
+
+function removeEntry(e) {
+  if (e.group) { scene.remove(e.group); disposeGroup(e.group); }
+  if (e.video) { e.video.pause(); e.video.removeAttribute('src'); e.video.load(); }
+}
+
+// ---------- Bazadan sinxronlash ----------
+function syncItems(docs) {
+  const seen = new Set();
+  docs.forEach((d, i) => {
+    if (!d.exists) return;
+    const data = d.data() || {};
+    if (!data.assetId) return;
+    seen.add(d.id);
+    const slot = typeof data.slot === 'number' ? data.slot : i;
+    let e = items.get(d.id);
+    if (!e) {
+      e = { id: d.id, assetId: data.assetId, kind: data.kind === 'video' ? 'video' : 'image',
+            title: data.title || '', slot, group: null, video: null };
+      items.set(d.id, e);
+      loadEntry(e);
+    } else {
+      e.slot = slot;
+    }
+  });
+  for (const [id, e] of items) {
+    if (!seen.has(id)) { removeEntry(e); items.delete(id); }
+  }
+
+  // Joylar takrorlanmasligi va chegaradan chiqmasligi uchun
+  const taken = new Set();
+  const pending = [];
+  [...items.values()].sort((a, b) => a.slot - b.slot).forEach(e => {
+    if (e.slot >= 0 && e.slot < MAX_FRAMES && !taken.has(e.slot)) taken.add(e.slot);
+    else pending.push(e);
+  });
+  for (const e of pending) {
+    let f = 0;
+    while (taken.has(f)) f++;
+    e.slot = f;
+    taken.add(f);
+  }
+  for (const e of items.values()) placeGroup(e);
+
+  updateCount();
+  introEl.classList.toggle('open', items.size === 0 && !!db);
+  introEditor.style.display = assets ? '' : 'none';
+  introViewer.style.display = assets ? 'none' : '';
+}
+
+// ---------- Yuklash (faqat muharrir) ----------
+async function uploadMedia(files) {
+  if (!db || !assets) return;
+  for (const f of Array.from(files)) {
+    if (items.size >= MAX_FRAMES) { alert('Muzey joyi tugadi'); break; }
+    const isImg = /^image\/(png|jpeg|gif|webp)$/.test(f.type);
+    const isVid = /^video\/(mp4|webm)$/.test(f.type);
+    if (!isImg && !isVid) {
+      alert('Qo‘llab-quvvatlanmaydi: ' + f.name + '. Rasm: PNG/JPG/GIF/WEBP. Video: MP4/WEBM.');
+      continue;
+    }
+    if (f.size > 20 * 1024 * 1024) { alert('Fayl 20 MB dan katta: ' + f.name); continue; }
+    setStatus('Yuklanmoqda: ' + f.name + '…');
+    try {
+      const res = await assets.upload(f);
+      await db.collection('items').add({
+        kind: isImg ? 'image' : 'video',
+        assetId: res.id,
+        title: f.name,
+        slot: nextFreeSlot(),
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      alert('Yuklashda xatolik: ' + f.name + ' (' + ((err && err.code) || 'xato') + ')');
+    }
+  }
+  setStatus('');
+}
+
+async function uploadMusic(file) {
+  if (!db || !assets) return;
+  let type = '';
+  if (/\.m4a$/i.test(file.name) || /\.mp4$/i.test(file.name) || file.type === 'video/mp4') type = 'video/mp4';
+  else if (/\.webm$/i.test(file.name) || file.type === 'video/webm') type = 'video/webm';
+  if (!type) { alert('Musiqa uchun MP4, M4A yoki WEBM yuklang. MP3 hozircha qo‘llab-quvvatlanmaydi.'); return; }
+  setStatus('Musiqa yuklanmoqda…');
+  try {
+    const res = await assets.upload(file, { type });
+    const prev = await db.doc('config/main').get();
+    const oldId = prev.exists ? (prev.data() || {}).musicAssetId : null;
+    await db.doc('config/main').set({ musicAssetId: res.id, musicTitle: file.name });
+    if (oldId) { try { await assets.delete(oldId); } catch (_) {} }
+  } catch (err) {
+    alert('Musiqa yuklanmadi (' + ((err && err.code) || 'xato') + ')');
+  }
+  setStatus('');
+}
+
+document.getElementById('file').addEventListener('change', e => { uploadMedia(e.target.files); e.target.value = ''; });
+document.getElementById('fileIntro').addEventListener('change', e => { uploadMedia(e.target.files); e.target.value = ''; });
+document.getElementById('music').addEventListener('change', e => { if (e.target.files[0]) uploadMusic(e.target.files[0]); e.target.value = ''; });
+
+musicBtn.addEventListener('click', () => {
+  if (audio.paused) { audio.play().catch(() => {}); musicBtn.textContent = '♪ Musiqani o‘chirish'; }
+  else { audio.pause(); musicBtn.textContent = '♪ Musiqani yoqish'; }
+});
+
+// ---------- Rasmni / videoni ko'rish ----------
+const modal = document.getElementById('modal');
+const mimg = document.getElementById('mimg');
+const mvid = document.getElementById('mvid');
+const mcap = document.getElementById('mcap');
+const mdel = document.getElementById('mdel');
+let openEntry = null;
+
+function openFrame(entry) {
+  openEntry = entry;
+  mcap.textContent = entry.title;
+  if (entry.kind === 'video') {
+    mimg.style.display = 'none';
+    mvid.style.display = '';
+    mvid.src = '/_blob/' + entry.assetId;
+    mvid.muted = false;
+    mvid.play().catch(() => {});
+  } else {
+    mvid.style.display = 'none';
+    mimg.style.display = '';
+    mimg.src = '/_blob/' + entry.assetId;
+  }
+  mdel.style.display = assets ? '' : 'none';
+  modal.classList.add('open');
+}
+function closeModal() {
+  mvid.pause();
+  mvid.removeAttribute('src');
+  mvid.load();
+  modal.classList.remove('open');
+  openEntry = null;
+}
+document.getElementById('mclose').addEventListener('click', closeModal);
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+mdel.addEventListener('click', async () => {
+  if (!openEntry || !assets || !db) return;
+  const e = openEntry;
+  if (!confirm('Bu rasm/videoni muzeydan o‘chirasizmi?')) return;
+  try {
+    await db.collection('items').doc(e.id).delete();
+    await assets.delete(e.assetId);
+  } catch (err) {
+    alert('O‘chirishda xatolik');
+  }
+  closeModal();
+});
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+canvas.addEventListener('pointerup', e => {
+  if (dragMoved > 6 || modal.classList.contains('open')) return;
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const groups = [...items.values()].filter(x => x.group).map(x => x.group);
+  const hits = raycaster.intersectObjects(groups, true);
+  if (hits.length) {
+    const obj = hits[0].object;
+    const entry = [...items.values()].find(x => x.group && (x.group === obj || x.group.children.includes(obj)));
+    if (entry) openFrame(entry);
+  }
+});
+
+// ---------- Ulanishni o'rnatish ----------
+function hideLoading() {
+  const ld = document.getElementById('loading');
+  if (ld) { ld.style.opacity = 0; setTimeout(() => ld.remove(), 900); }
+}
+(async function connect() {
+  if (!window.claude || !window.claude.use) {
+    roleEl.textContent = 'Bu sahifa Claude ichida to‘liq ishlaydi.';
+    hideLoading();
+    return;
+  }
+  const [d, a] = await Promise.all([window.claude.use('db'), window.claude.use('assets')]);
+  db = d;
+  assets = a;
+  editorBox.style.display = assets ? '' : 'none';
+  roleEl.textContent = assets
+    ? 'Siz muzey egasisiz. Rasm va videolarni yuklang; ular muzeyda hamma uchun ko‘rinadi.'
+    : 'Siz muzeyni tomosha qilyapsiz.';
+  if (!db) {
+    introViewer.style.display = '';
+    introEl.classList.add('open');
+  } else {
+    db.collection('items').onSnapshot(s => syncItems(s.docs), err => console.error(err));
+    db.doc('config/main').onSnapshot(s => {
+      const data = s.exists ? (s.data() || {}) : {};
+      if (data.musicAssetId) {
+        audio.src = '/_blob/' + data.musicAssetId;
+        musicBox.style.display = '';
+      } else {
+        audio.pause();
+        audio.removeAttribute('src');
+        musicBox.style.display = 'none';
+      }
+    }, err => console.error(err));
+  }
+  hideLoading();
+})();
+
+// ======================= Harakat va kamera =======================
+const SPEED = 0.16;
+const TURN = 0.045;
+const LIMIT = W - 1.5;
+const obstacleR = 0.6;
+const fwd = new THREE.Vector3();
+const camPos = new THREE.Vector3();
+const look = new THREE.Vector3();
+
+function resolveCollisions() {
+  const r = obstacleR;
+  const p = player.position;
+  p.x = clamp(p.x, -LIMIT, LIMIT);
+  p.z = clamp(p.z, -LIMIT, LIMIT);
+  for (let iter = 0; iter < 2; iter++) {
+    for (const o of obstacles) {
+      if (o.r) {
+        const dx = p.x - o.x, dz = p.z - o.z;
+        const d = Math.hypot(dx, dz), min = o.r + r;
+        if (d < min && d > 1e-4) { const k = (min - d) / d; p.x += dx * k; p.z += dz * k; }
+      } else {
+        const cx = clamp(p.x, o.minX, o.maxX);
+        const cz = clamp(p.z, o.minZ, o.maxZ);
+        const dx = p.x - cx, dz = p.z - cz;
+        const d = Math.hypot(dx, dz);
+        if (d < r && d > 1e-4) { const k = (r - d) / d; p.x += dx * k; p.z += dz * k; }
+      }
+    }
+  }
+}
+
+function update(dt, t) {
+  // A — chapga buriladi (heading oshadi), D — o'ngga (heading kamayadi)
+  if (keys.has('a')) heading += TURN * dt;
+  if (keys.has('d')) heading -= TURN * dt;
+
+  // Yo'nalish bo'yicha harakat: W — oldinga, S — orqaga
+  fwd.set(Math.sin(heading), 0, Math.cos(heading));
+  let speed = 0;
+  if (keys.has('w')) speed += SPEED;
+  if (keys.has('s')) speed -= SPEED * 0.7;
+  const moving = speed !== 0;
+  if (moving) {
+    player.position.addScaledVector(fwd, speed * dt);
+    walkPhase += 0.03 * dt * Math.sign(speed);
+  }
+  resolveCollisions();
+  player.rotation.y = heading;
+
+  // Mushuk animatsiyasi
+  if (catParts) {
+    const sw = moving ? Math.sin(walkPhase * Math.PI * 2) : 0;
+    catParts.legs[-1].rotation.x = sw * 0.5;
+    catParts.legs[1].rotation.x = -sw * 0.5;
+    catParts.arms[-1].rotation.x = -sw * 0.35;
+    catParts.arms[1].rotation.x = sw * 0.35;
+    catParts.tail.rotation.y = Math.sin(t * 2) * 0.25;
+    catParts.cat.position.y = catBaseY + (moving ? Math.abs(sw) * 0.05 : Math.sin(t * 1.6) * 0.02);
+  }
+
+  // Kamera: ayiq-mushuk orqasida, u qarab turgan tomonga qaraydi
+  const tx = player.position.x, ty = player.position.y + 2.0, tz = player.position.z;
+  camPos.set(
+    tx - fwd.x * dist * Math.cos(pitch),
+    ty + Math.sin(pitch) * dist,
+    tz - fwd.z * dist * Math.cos(pitch)
+  );
+  camPos.x = clamp(camPos.x, -W + 0.8, W - 0.8);
+  camPos.z = clamp(camPos.z, -W + 0.8, W - 0.8);
+  camPos.y = clamp(camPos.y, 0.6, WH - 0.6);
+  camera.position.lerp(camPos, Math.min(1, 0.25 * dt));
+  look.set(tx, ty, tz);
+  camera.lookAt(look);
+
+  // Videolar faqat yaqin bo'lganda ijro etiladi
+  for (const e of items.values()) {
+    if (!e.video || !e.group) continue;
+    const dx = e.group.position.x - player.position.x;
+    const dz = e.group.position.z - player.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 14 && e.video.paused) e.video.play().catch(() => {});
+    else if (d >= 18 && !e.video.paused) e.video.pause();
+  }
+}
+
+// ======================= Uchuvchi gullar animatsiyasi =======================
+function updatePetals(dt, t) {
+  for (let i = 0; i < PN; i++) {
+    petalPos[i * 3 + 1] -= 0.012 * dt;
+    petalPos[i * 3] += Math.sin(t * 0.8 + i) * 0.004 * dt;
+    if (petalPos[i * 3 + 1] < 0) {
+      petalPos[i * 3 + 1] = WH;
+      petalPos[i * 3] = rand(-W + 2, W - 2);
+      petalPos[i * 3 + 2] = rand(-W + 2, W - 2);
+    }
+  }
+  petalGeo.attributes.position.needsUpdate = true;
+}
+
+// ======================= Render sikli =======================
+camera.position.set(0, 6, W - 4 + 9);
+let last = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min((now - last) / 16.67, 2);
+  last = now;
+  update(dt, now / 1000);
+  updatePetals(dt, now / 1000);
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
